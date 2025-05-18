@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hospital-api-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hospital-api
+  template:
+    metadata:
+      labels:
+        app: hospital-api
+    spec:
+      containers:
+        - name: hospital-api
+          image: hospital-api:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5001
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Development"
+          volumeMounts:
+            - name: appsettings
+              mountPath: /app/appsettings.Development.json
+              subPath: appsettings.Development.json
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: appsettings
+          hostPath:
+            path: /absolute/path/to/src/Hospital.API/appsettings.Development.json
+            type: File

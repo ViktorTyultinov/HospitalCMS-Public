@@ -1,0 +1,2 @@
+namespace Hospital.Application.DTOs;
+public record GeneralPractitionerCheckUpDto(Guid Id, DateTime CheckupDate, string? Notes, Guid DiagnosisId, Guid PrescriptionId, Guid PatientId, Guid GeneralPractitionerId, DateTime CreatedAt);

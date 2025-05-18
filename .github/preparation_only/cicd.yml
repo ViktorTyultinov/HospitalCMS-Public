@@ -1,0 +1,117 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: your-region
+  CLUSTER_NAME: your-cluster-name
+  ECR_REGISTRY: your-account-id.dkr.ecr.your-region.amazonaws.com
+  IMAGE_NAME: your-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run unit tests
+        run: dotnet test ./tests/YourApp.Tests.csproj
+
+  infra:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -backend-config="bucket=your-bucket" -backend-config="key=terraform.tfstate" -backend-config="region=${{ env.AWS_REGION }}"
+        working-directory: infrastructure/terraform/aws
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: infrastructure/terraform/aws
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  build-and-deploy:
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: Wait for cluster readiness
+        run: |
+          echo "Waiting for nodes to be ready..."
+          kubectl wait --for=condition=Ready nodes --timeout=300s
+
+      - name: Ensure namespace exists
+        run: kubectl create namespace your-namespace --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Configs and Secrets
+        run: kubectl apply -f ./k8s/configs/ -n your-namespace
+
+      - name: Deploy Kubernetes Resources
+        run: |
+          kubectl apply -f ./k8s/deployments/ -n your-namespace
+          kubectl apply -f ./k8s/services/ -n your-namespace
+
+      - name: Check Deployment Rollouts
+        run: |
+          kubectl rollout status deployment/your-deployment -n your-namespace --timeout=120s
+          
+      - name: Notify Discord
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          COLOR="5814783"  # Blue
+
+          if [ "$STATUS" = "success" ]; then
+            COLOR="3066993"  # Green
+          elif [ "$STATUS" = "failure" ]; then
+            COLOR="15158332"  # Red
+          fi
+
+          curl -X POST -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "CI/CD Pipeline",
+                "description": "Job `${{ github.job }}` completed with status: **'"$STATUS"'**",
+                "color": '"$COLOR"',
+                "footer": {
+                  "text": "Triggered by ${{ github.actor }} on ${{ github.ref }}"
+                }
+              }]
+            }' ${{ secrets.DISCORD_WEBHOOK_URL }}
+

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hospital-logs-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seq
+  template:
+    metadata:
+      labels:
+        app: seq
+    spec:
+      containers:
+        - name: seq
+          image: datalust/seq:latest
+          ports:
+            - containerPort: 80
+            - containerPort: 5342
+          env:
+            - name: ACCEPT_EULA
+              value: "Y"
+            - name: SEQ_RETENTION__POLICY__DISK
+              value: "14.00:00:00"
+          volumeMounts:
+            - mountPath: /data
+              name: seq-data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+      volumes:
+        - name: seq-data
+          emptyDir: {}  # Use a PVC if persistent storage is needed

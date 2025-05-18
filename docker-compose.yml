@@ -1,0 +1,64 @@
+services:
+  hospital-api:
+    container_name: hospital_api_container
+    build:
+      context: ./
+      dockerfile: src/Hospital.API/Dockerfile
+    ports:
+      - "5000:5001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      - postgres
+      - seq
+    networks:
+      - app_network
+    volumes:
+      - ./src/Hospital.API/appsettings.Development.json:/app/appsettings.Development.json
+
+  postgres:
+    image: postgres:latest
+    container_name: hospital_postgres_container
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: hospital_pgadmin_container
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    depends_on:
+      - postgres
+    networks:
+      - app_network
+    ports:
+      - "5050:80"
+  seq:
+    image: datalust/seq:latest
+    container_name: hospital_seq_container
+    environment:
+      - ACCEPT_EULA=Y
+      - SEQ_RETENTION__POLICY__DISK=14.00:00:00  # 14 days retention
+    ports:
+      - "5341:80"
+      - "5342:5342"  # ingestion port
+    networks:
+      - app_network
+    volumes:
+      - ./seq-data:/data
+
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
